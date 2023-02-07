@@ -1,0 +1,54 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/
+
+import {
+  IDataSourceFactory,
+  DataSourceFactoryInitializeArgs,
+} from "@foxglove/studio-base/context/PlayerSelectionContext";
+import WebRTCPlayer from "@foxglove/studio-base/players/WebRTCPlayer";
+import { Player } from "@foxglove/studio-base/players/types";
+
+export default class WebRTCDataSourceFactory implements IDataSourceFactory {
+  public id = "webrtc";
+  public type: IDataSourceFactory["type"] = "connection";
+  public displayName = "WebRTC Connection";
+  public iconName: IDataSourceFactory["iconName"] = "Flow";
+  public description =
+    "Connect to a ROS 1, ROS 2, or custom system over a WebRTC connection.";
+  public docsLinks = [{ url: "TODO" }];
+
+  public formConfig = {
+    fields: [
+      {
+        id: "url",
+        label: "Transitive Robotics device URL",
+        defaultValue: "https://portal.transitiverobotics.com/running/@transitive-robotics/foxglove-webrtc/dist/foxglove-webrtc-device.js?userId=USERID&deviceId=DEVICEID",
+        validate: (newValue: string): Error | undefined => {
+          try {
+            const url = new URL(newValue);
+            // if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+            //   return new Error(`Invalid protocol: ${url.protocol}`);
+            // }
+            return undefined;
+          } catch (err) {
+            return new Error("Enter a valid url");
+          }
+        },
+      },
+    ],
+  };
+
+  public initialize(args: DataSourceFactoryInitializeArgs): Player | undefined {
+    const url = args.params?.url;
+    if (!url) {
+      return;
+    }
+
+    return new WebRTCPlayer({
+      url,
+      // metricsCollector: args.metricsCollector,
+      // sourceId: this.id,
+    });
+  }
+}
