@@ -36,6 +36,8 @@ import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
 
 import { useEffect } from 'react';
 
+const anyWindow: any = window;
+
 /** ensure the named web component is loaded; if not, it is loaded assuming
 the .js file it is defined in has the same name as the component itself */
 // const ensureWebComponentIsLoaded = (capability, name, userId, deviceId) => {
@@ -50,22 +52,42 @@ the .js file it is defined in has the same name as the component itself */
 //       }
 //     }, [capability, name, userId, deviceId]);
 // };
-const ensureWebComponentIsLoaded =
-  (capability: string, name: string, userId: string, deviceId: string): Promise<void> =>
+// const ensureWebComponentIsLoaded =
+//   (capability: string, name: string, userId: string, deviceId: string): Promise<void> =>
+//   new Promise((resolve, reject) => {
+//     if (userId && deviceId && !customElements.get(name)) {
+//       const host = 'http://portal.homedesk.local:8000'; // #CHANGE
+//       const script = document.createElement('script');
+//       const params = `userId=${userId}&deviceId=${deviceId}`;
+//       script.setAttribute('src',
+//         `${host}/running/${capability}/dist/${name}.js?${params}`);
+//       document.head.appendChild(script);
+//       script.onload = () => {
+//         console.log(`${capability} loaded`);
+//         resolve();
+//       }
+//     }
+//   });
+
+const ensurePlayerIsLoaded = (url: string): Promise<void> =>
   new Promise((resolve, reject) => {
-    if (userId && deviceId && !customElements.get(name)) {
-      const host = 'http://portal.homedesk.local:8000'; // #CHANGE
+    if (url && !anyWindow.transitive?.FoxgloveWebrtcPlayer) {
       const script = document.createElement('script');
-      const params = `userId=${userId}&deviceId=${deviceId}`;
-      script.setAttribute('src',
-        `${host}/running/${capability}/dist/${name}.js?${params}`);
+      script.setAttribute('src', url);
       document.head.appendChild(script);
       script.onload = () => {
-        console.log(`${capability} loaded`);
+        console.log(`${url} loaded`);
         resolve();
       }
     }
   });
+
+/** decode a JWT, i.e., extract and decode the base64 encoded payload object */
+const decodeJWT = (jwt: string) => {
+  const base64 = jwt.split('.')[1];
+  if (!base64) return null;
+  return JSON.parse(atob(base64));
+};
 
 const log = Logger.getLogger(__filename);
 const rosLog = Logger.getLogger("ROS1");
@@ -91,11 +113,11 @@ const CAPABILITIES = [
 //   sourceId: string;
 // };
 
-const anyWindow: any = window;
 
 // Connects to a robot over a webrtc connection negotiated by Transitive Robotics
 export default class WebRTCPlayer implements Player {
   private _url: string;
+  private _jwt: string;
   // private _hostname?: string; // ROS_HOSTNAME
   // private _rosNode?: RosNode; // Our ROS node when we're connected.
   private _id: string = uuidv4(); // Unique ID for this player.
@@ -137,9 +159,10 @@ export default class WebRTCPlayer implements Player {
 //     void this._open();
 //   }
 
-  public constructor({ url }: {url: string}) {
+  public constructor({ url, jwt }: {url: string, jwt: string}) {
     log.info(`initializing WebRTCPlayer url=${url}`);
     this._url = url;
+    this._jwt = jwt;
     this._start = fromMillis(Date.now());
 
     this._init();
@@ -157,26 +180,25 @@ export default class WebRTCPlayer implements Player {
     });
   }
 
-  private _init = async() => {
+  private _init = async () => {
 
-    const orgId = 'cfritz';
-    const deviceId = 'f5b1b62bd4';
-    const capability = '@transitive-robotics/foxglove-webrtc';
+    // const orgId = 'cfritz';
+    // const deviceId = 'f5b1b62bd4';
     const component = 'foxglove-player';
+    const {id, device, capability} = decodeJWT(this._jwt);
 
-
-    await ensureWebComponentIsLoaded(capability, component, orgId, deviceId);
-
-    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImNmcml0eiIsImRldmljZSI6ImY1YjFiNjJiZDQiLCJjYXBhYmlsaXR5IjoiQHRyYW5zaXRpdmUtcm9ib3RpY3MvZm94Z2xvdmUtd2VicnRjIiwidmFsaWRpdHkiOjg2NDAwLCJpYXQiOjE2NzY0OTkzNTV9.9cZzPut8JGMR90DLMXPNMGxc47tffgzReWfwDkxQwkg';
+    // await ensureWebComponentIsLoaded(capability, component, orgId, deviceId);
+    await ensurePlayerIsLoaded(`${this._url}?userId=${id}&deviceId=${device}`);
+    // const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImNmcml0eiIsImRldmljZSI6ImY1YjFiNjJiZDQiLCJjYXBhYmlsaXR5IjoiQHRyYW5zaXRpdmUtcm9ib3RpY3MvZm94Z2xvdmUtd2VicnRjIiwidmFsaWRpdHkiOjg2NDAwLCJpYXQiOjE2ODEwOTAyNjR9.gfIDQfRTKYHGD_hdLs0HGDhp8RaU0mYWHdCNw97Zmfg';
 
     anyWindow.webrtcPlayer = this;
 
     const foxgloveWebrtcPlayer = new anyWindow.transitive.FoxgloveWebrtcPlayer();
     await foxgloveWebrtcPlayer.connect({
-      jwt,
-      id: 'cfritz',
-      host: 'homedesk.local:8000',
-      ssl: false
+      jwt: this._jwt,
+      id,
+      host: 'homedesk.local:8000',   // #TODO
+      ssl: false  // #TODO
     });
     const sessionId = foxgloveWebrtcPlayer.sessionId;
     log.debug('sessionId:', sessionId);
@@ -187,7 +209,7 @@ export default class WebRTCPlayer implements Player {
     }, 4000);
 
     this._fullTopic = ['', // for initial slash
-        orgId, deviceId, capability, anyWindow.transitive.version
+        id, device, capability, anyWindow.transitive.version
       ].join('/');
     this._sessionTopic = `${this._fullTopic}/${sessionId}`;
 
