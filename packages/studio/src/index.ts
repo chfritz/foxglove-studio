@@ -232,6 +232,8 @@ export interface RenderState {
 
   /** Application settings. This will only contain subscribed application setting key/values */
   appSettings?: ReadonlyMap<string, AppSettingValue>;
+
+  videoTracks?: any[];
 }
 
 export type PanelExtensionContext = {

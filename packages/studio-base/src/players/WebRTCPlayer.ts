@@ -303,7 +303,7 @@ export default class WebRTCPlayer implements Player {
     //     schemaName: 'non_std_msgs/Test'
     //   }];
 
-    log.debug('emitting messages', this._parsedMessages);
+    log.debug('emitting state', this);
 
     const messages = this._parsedMessages;
     this._parsedMessages = [];
@@ -382,15 +382,14 @@ export default class WebRTCPlayer implements Player {
         streams.push({videoSource: {type, value}, complete: true});
       }
     });
-    if (streams.length) {
-      this._foxgloveWebrtcPlayer.setRequest({ streams }, {
-        onTrack: (track: any, tracks: any[]) => {
-          console.log('onTrack', track, tracks);
-          this._videoTracks = tracks;
-          this._emitState();
-        }
-      });
-    }
+
+    this._foxgloveWebrtcPlayer.setRequest({ streams }, {
+      onTrack: (track: any, tracks: any[]) => {
+        console.log('onTrack', track, tracks);
+        this._videoTracks = tracks;
+        this._emitState();
+      }
+    });
   }
 
   public setPublishers(publishers: AdvertiseOptions[]): void {
