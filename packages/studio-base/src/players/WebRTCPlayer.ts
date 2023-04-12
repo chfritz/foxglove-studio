@@ -147,6 +147,8 @@ export default class WebRTCPlayer implements Player {
   private _fullTopic?: string;
   private _sessionTopic?: string;
   private _topicIndex?: any;
+  private _foxgloveWebrtcPlayer?: any;
+  private _videoTracks?: any[];
 
 //   public constructor({ url, hostname, metricsCollector, sourceId }: Ros1PlayerOpts) {
 //     log.info(`initializing Ros1Player (url=${url}, hostname=${hostname})`);
@@ -189,11 +191,11 @@ export default class WebRTCPlayer implements Player {
 
     // await ensureWebComponentIsLoaded(capability, component, orgId, deviceId);
     await ensurePlayerIsLoaded(`${this._url}?userId=${id}&deviceId=${device}`);
-    // const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImNmcml0eiIsImRldmljZSI6ImY1YjFiNjJiZDQiLCJjYXBhYmlsaXR5IjoiQHRyYW5zaXRpdmUtcm9ib3RpY3MvZm94Z2xvdmUtd2VicnRjIiwidmFsaWRpdHkiOjg2NDAwLCJpYXQiOjE2ODEwOTAyNjR9.gfIDQfRTKYHGD_hdLs0HGDhp8RaU0mYWHdCNw97Zmfg';
 
     anyWindow.webrtcPlayer = this;
 
     const foxgloveWebrtcPlayer = new anyWindow.transitive.FoxgloveWebrtcPlayer();
+    this._foxgloveWebrtcPlayer = foxgloveWebrtcPlayer;
     await foxgloveWebrtcPlayer.connect({
       jwt: this._jwt,
       id,
@@ -333,6 +335,7 @@ export default class WebRTCPlayer implements Player {
         // subscribedTopics: this._subscribedTopics,
         // services: this._services,
         // parameters: this._parameters,
+        videoTracks: this._videoTracks,
       }
     });
 
@@ -341,7 +344,7 @@ export default class WebRTCPlayer implements Player {
   public setListener(listener: (arg0: PlayerState) => Promise<void>): void {
     this._listener = listener;
     this._emitState();
-    }
+  }
 
   public close(): void {
   }
@@ -354,10 +357,40 @@ export default class WebRTCPlayer implements Player {
 
   private _updateSubscriptions() {
     const subscriptions: any = {};
-    _.forEach(this._requestedSubscriptions, ({topic}) => subscriptions[topic] = 1);
+    const webrtcTracks: any = {};
+    _.forEach(this._requestedSubscriptions, ({topic}) => {
+      if (topic.startsWith('webrtc:')) {
+        webrtcTracks[topic.slice('webrtc:'.length)] = 1;
+      } else {
+        subscriptions[topic] = 1;
+      }
+    });
+
     log.debug('_updateSubscriptions', subscriptions);
     this._data?.update(`${this._sessionTopic}/client/subscriptions`,
       subscriptions);
+
+    if (!this._foxgloveWebrtcPlayer) {
+      console.log('webrtc player not yet initialized');
+      return;
+    }
+
+    const streams: any[] = [];
+    Object.keys(webrtcTracks).sort().forEach((sourceSpec) => {
+      const [type, value] = sourceSpec.split(',');
+      if (type && value) {
+        streams.push({videoSource: {type, value}, complete: true});
+      }
+    });
+    if (streams.length) {
+      this._foxgloveWebrtcPlayer.setRequest({ streams }, {
+        onTrack: (track: any, tracks: any[]) => {
+          console.log('onTrack', track, tracks);
+          this._videoTracks = tracks;
+          this._emitState();
+        }
+      });
+    }
   }
 
   public setPublishers(publishers: AdvertiseOptions[]): void {
@@ -370,13 +403,14 @@ export default class WebRTCPlayer implements Player {
   public publish({ topic, msg }: PublishPayload): void {
   }
 
-  public async callService(): Promise<unknown> {
-    // TODO
+  public async callService(service: string, request: unknown): Promise<unknown> {
+    // console.log('callService', service, request);
+    // return true;
     throw new Error("Service calls are not supported by this data source");
   }
 
-//   // Bunch of unsupported stuff. Just don't do anything for these.
-  public setGlobalVariables(): void {
-//     // no-op
+  //   // Bunch of unsupported stuff. Just don't do anything for these.
+  public setGlobalVariables(...args: any[]): void {
+    //     // no-op
   }
 }
