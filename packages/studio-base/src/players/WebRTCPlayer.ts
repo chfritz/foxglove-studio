@@ -226,7 +226,6 @@ export default class WebRTCPlayer implements Player {
           "angular_velocity":-1
       }}}
       */
-      log.debug('got data', data);
       const json = JSON.parse(data);
       if (json.type === 'ros1message') {
         _.forEach(json.data, (value, topic) => {
@@ -303,7 +302,7 @@ export default class WebRTCPlayer implements Player {
     //     schemaName: 'non_std_msgs/Test'
     //   }];
 
-    log.debug('emitting state', this);
+    // log.debug('emitting state', this);
 
     const messages = this._parsedMessages;
     this._parsedMessages = [];
