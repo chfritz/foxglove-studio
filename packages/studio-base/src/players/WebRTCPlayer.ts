@@ -113,6 +113,42 @@ const CAPABILITIES = [
 //   sourceId: string;
 // };
 
+const clamp = (n: number, low: number, high: number) => Math.min(Math.max(low, n), high);
+
+const yuv2rgb = (y: any, u: any, v: any) => {
+  y = parseInt(y);
+  u = parseInt(u);
+  v = parseInt(v);
+  const r = clamp(Math.floor( y + 1.4075 * (v - 128)), 0, 255);
+  const g = clamp(Math.floor( y - 0.3455 * (u - 128) - (0.7169 * (v - 128))), 0, 255);
+  const b = clamp(Math.floor( y + 1.7790 * (u - 128)), 0, 255);
+  return {r,g,b};
+};
+
+/** Convert YUV420 (aka. I420) buffer to rgb8.
+ * From https://gist.github.com/ryohey/ee6a4d9a7293d66944b1ef9489807783. */
+function yuv420ProgPlanarToRgb(yuv: any, width: number, height: number) {
+  const frameSize = width * height;
+  const halfWidth = Math.floor(width / 2);
+  const uStart = frameSize;
+  const vStart = frameSize + Math.floor(frameSize / 4);
+  const rgb = [];
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const yy = yuv[y * width + x];
+      const colorIndex = Math.floor(y / 2) * halfWidth + Math.floor(x / 2);
+      const uu = yuv[uStart + colorIndex] - 128;
+      const vv = yuv[vStart + colorIndex] - 128;
+      const r = yy + 1.402 * vv;
+      const g = yy - 0.344 * uu - 0.714 * vv;
+      const b = yy + 1.772 * uu;
+      rgb.push(r, g, b);
+    }
+  }
+
+  return rgb;
+}
 
 // Connects to a robot over a webrtc connection negotiated by Transitive Robotics
 export default class WebRTCPlayer implements Player {
@@ -132,7 +168,7 @@ export default class WebRTCPlayer implements Player {
   // private _parameters = new Map<string, ParameterValue>(); // rosparams
   private _start: Time; // The time at which we started playing.
   // private _clockTime?: Time; // The most recent published `/clock` time, if available
-  // private _requestedPublishers: AdvertiseOptions[] = []; // Requested publishers by setPublishers()
+  private _requestedPublishers: AdvertiseOptions[] = []; // Requested publishers by setPublishers()
   private _requestedSubscriptions: SubscribePayload[] = []; // Requested subscriptions by setSubscriptions()
   private _parsedMessages: MessageEvent<unknown>[] = []; // Queue of messages that we'll send in next _emitState() call.
   // private _parsedMessages: any[] = []; // Queue of messages that we'll send in next _emitState() call.
@@ -215,46 +251,7 @@ export default class WebRTCPlayer implements Player {
       ].join('/');
     this._sessionTopic = `${this._fullTopic}/${sessionId}`;
 
-    foxgloveWebrtcPlayer.onData((data: any) => {
-      /** example data: {
-       "type":"ros1message",
-        "data":{"/turtle1/pose":{
-          "x":6.251485824584961,
-          "y":3.2636923789978027,
-          "theta":2.1935558319091797,
-          "linear_velocity":0,
-          "angular_velocity":-1
-      }}}
-      */
-      const json = JSON.parse(data);
-      if (json.type === 'ros1message') {
-        _.forEach(json.data, (value, topic) => {
-          const receiveTime = fromMillis(Date.now());
-
-          this._parsedMessages.push({
-            topic,
-            schemaName: this._topicIndex[topic].schemaName,
-            receiveTime,
-            message: value,
-            sizeInBytes: data.length - 12 // 12 for type field and value;
-            // TODO: make more precise
-          });
-
-          // update stats:
-          let stats = this._providerTopicsStats.get(topic);
-          if (!stats) {
-            stats = {
-              firstMessageTime: receiveTime,
-              numMessages: 0
-            };
-            this._providerTopicsStats.set(topic, stats);
-          }
-          stats.numMessages++;
-          stats.lastMessageTime = receiveTime;
-        });
-        this._emitState();
-      }
-    });
+    foxgloveWebrtcPlayer.onData(this._onData.bind(this));
 
     const mqttSync = foxgloveWebrtcPlayer.mqttSync;
 
@@ -277,7 +274,98 @@ export default class WebRTCPlayer implements Player {
 
     this._data = mqttSync.data;
     this._updateSubscriptions();
+    this._updatePublishers();
   }
+
+
+  /** handler when receiving data from webrtc, example data: {
+    "type":"ros1message",
+    "data":{"/turtle1/pose":{
+      "x":6.251485824584961,
+      "y":3.2636923789978027,
+      "theta":2.1935558319091797,
+      "linear_velocity":0,
+      "angular_velocity":-1
+    }}
+  }
+  */
+  private _onData(json: any) {
+    if (json.type === 'ros1message') {
+      _.forEach(json.data, (value, topic) => {
+        const receiveTime = fromMillis(Date.now());
+
+        this._parsedMessages.push({
+          topic,
+          schemaName: this._topicIndex[topic].schemaName,
+          receiveTime,
+          message: value,
+          sizeInBytes: JSON.stringify(value)?.length || 0,
+          // - 12 // 12 for type field and value;
+          // TODO: make more precise
+        });
+
+        // update stats:
+        let stats = this._providerTopicsStats.get(topic);
+        if (!stats) {
+          stats = {
+            firstMessageTime: receiveTime,
+            numMessages: 0
+          };
+          this._providerTopicsStats.set(topic, stats);
+        }
+        stats.numMessages++;
+        stats.lastMessageTime = receiveTime;
+      });
+
+    } else if (json.type == 'videobuffer') {
+      // console.log('videobuffer', json.buf);
+
+      const receiveTime = fromMillis(Date.now());
+      const topic = json.topic;
+
+      // const rgb = [];
+      // const buf = json.buf;
+      // for (let i = 0; i < buf.length; i += 3) {
+      //   const {r,g,b} = yuv2rgb(buf[i], buf[i+1], buf[i+2]);
+      //   rgb.push(r, g, b);
+      // }
+
+      // TODO: this requires about 80% CPU for fisheye (30fps)!
+      const rgb = yuv420ProgPlanarToRgb(json.buf, json.width, json.height);
+      // const rgb = json.buf;
+
+      this._parsedMessages.push({
+        topic,
+        schemaName: 'sensor_msgs/Image',
+        receiveTime,
+        message: {
+          header: {stamp: {sec: 0, nsec: 0}, seq: 0},
+          width: json.width,
+          height: json.height,
+          encoding: 'rgb8', // #CHANGE
+          is_bigendian: false,
+          step: json.width * 3, // #CHANGE
+          data: Buffer.from(rgb),
+        },
+        sizeInBytes: rgb.length,
+      });
+
+      // update stats:
+      let stats = this._providerTopicsStats.get(topic);
+      if (!stats) {
+        stats = {
+          firstMessageTime: receiveTime,
+          numMessages: 0
+        };
+        this._providerTopicsStats.set(topic, stats);
+      }
+      stats.numMessages++;
+      stats.lastMessageTime = receiveTime;
+    }
+
+    this._emitState();
+  }
+
 
 //   // Potentially performance-sensitive; await can be expensive
 //   // eslint-disable-next-line @typescript-eslint/promise-function-async
@@ -357,15 +445,18 @@ export default class WebRTCPlayer implements Player {
   private _updateSubscriptions() {
     const subscriptions: any = {};
     const webrtcTracks: any = {};
-    _.forEach(this._requestedSubscriptions, ({topic}) => {
-      if (topic.startsWith('webrtc:')) {
-        webrtcTracks[topic.slice('webrtc:'.length)] = 1;
+    this._topicIndex && _.forEach(this._requestedSubscriptions, ({topic}) => {
+      const {schemaName} = this._topicIndex[topic];
+      // if (topic.startsWith('webrtc:')) {
+        // webrtcTracks[topic.slice('webrtc:'.length)] = 1;
+      if (schemaName.split('/')[1] == 'Image') {
+        webrtcTracks[topic] = 1;
       } else {
         subscriptions[topic] = 1;
       }
     });
 
-    log.debug('_updateSubscriptions', subscriptions);
+    log.debug('_updateSubscriptions', {webrtcTracks, subscriptions});
     this._data?.update(`${this._sessionTopic}/client/subscriptions`,
       subscriptions);
 
@@ -376,10 +467,12 @@ export default class WebRTCPlayer implements Player {
 
     const streams: any[] = [];
     Object.keys(webrtcTracks).sort().forEach((sourceSpec) => {
-      const [type, value] = sourceSpec.split(',');
-      if (type && value) {
-        streams.push({videoSource: {type, value}, complete: true});
-      }
+      // const [type, value] = sourceSpec.split(',');
+      // if (type && value) {
+      const type = 'rostopic';
+      const value = sourceSpec;
+      streams.push({videoSource: {type, value}, complete: true});
+      // }
     });
 
     this._foxgloveWebrtcPlayer.setRequest({ streams }, {
@@ -392,13 +485,23 @@ export default class WebRTCPlayer implements Player {
   }
 
   public setPublishers(publishers: AdvertiseOptions[]): void {
-//     this._requestedPublishers = publishers;
+    this._requestedPublishers = publishers;
+    console.log('we were asked to advertise', publishers);
+    this._sessionTopic && this._updatePublishers();
+  }
+
+  private _updatePublishers(): void {
+    console.log(this._sessionTopic, 'advertising', this._requestedPublishers);
+    this._data?.update(`${this._sessionTopic}/client/publications`,
+      this._requestedPublishers);
   }
 
   public setParameter(key: string, value: ParameterValue): void {
   }
 
   public publish({ topic, msg }: PublishPayload): void {
+    console.log('we were asked to publish', topic, msg);
+    this._foxgloveWebrtcPlayer.publish({topic, msg});
   }
 
   public async callService(service: string, request: unknown): Promise<unknown> {
