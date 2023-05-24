@@ -16,27 +16,27 @@ export default class WebRTCDataSourceFactory implements IDataSourceFactory {
   public iconName: IDataSourceFactory["iconName"] = "Flow";
   public description =
     "Connect to a ROS 1, ROS 2, or custom system over a WebRTC connection.";
-  public docsLinks = [{ url: "TODO" }];
+  public docsLinks = [{ url:
+    "https://transitiverobotics.com/caps/transitive-robotics/foxglove-webrtc/"
+  }];
 
   public formConfig = {
-    fields: [
-      {
-        id: "url",
-        label: "Transitive Robotics device URL",
-        defaultValue: "https://portal.transitiverobotics.com/running/@transitive-robotics/foxglove-webrtc/dist/foxglove-webrtc-device.js?userId=USERID&deviceId=DEVICEID",
-        validate: (newValue: string): Error | undefined => {
-          try {
-            const url = new URL(newValue);
-            // if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-            //   return new Error(`Invalid protocol: ${url.protocol}`);
-            // }
-            return undefined;
-          } catch (err) {
-            return new Error("Enter a valid url");
+    fields: [{
+      id: "url",
+      label: "Transitive Robotics device URL",
+      defaultValue: "https://portal.transitiverobotics.com/running/@transitive-robotics/foxglove-webrtc/dist/foxglove-webrtc-device.js?userId=USERID&deviceId=DEVICEID",
+      validate: (newValue: string): Error | undefined => {
+        try {
+          const url = new URL(newValue);
+          if (url.protocol !== "http:" && url.protocol !== "https:") {
+            return new Error(`Invalid protocol: ${url.protocol}`);
           }
-        },
+          return undefined;
+        } catch (err) {
+          return new Error("Enter a valid url");
+        }
       },
-    ],
+    }],
   };
 
   public initialize(args: DataSourceFactoryInitializeArgs): Player | undefined {
