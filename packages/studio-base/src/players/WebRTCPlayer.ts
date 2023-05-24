@@ -11,7 +11,7 @@ import { debouncePromise } from "@foxglove/den/async";
 import Logger from "@foxglove/log";
 // import { RosNode, TcpSocket } from "@foxglove/ros1";
 // import { RosMsgDefinition } from "@foxglove/rosmsg";
-import { Time, fromMillis, isGreaterThan, toSec } from "@foxglove/rostime";
+import { Time, fromMillis } from "@foxglove/rostime";
 import { ParameterValue } from "@foxglove/studio";
 // import OsContextSingleton from "@foxglove/studio-base/OsContextSingleton";
 // import PlayerProblemManager from "@foxglove/studio-base/players/PlayerProblemManager";
@@ -33,8 +33,6 @@ import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
 // import rosDatatypesToMessageDefinition from "@foxglove/studio-base/util/rosDatatypesToMessageDefinition";
 // import { getTopicsByTopicName } from "@foxglove/studio-base/util/selectors";
 // import { HttpServer } from "@foxglove/xmlrpc";
-
-import { useEffect } from 'react';
 
 const anyWindow: any = window;
 
@@ -70,7 +68,7 @@ the .js file it is defined in has the same name as the component itself */
 //   });
 
 const ensurePlayerIsLoaded = (url: string): Promise<void> =>
-  new Promise((resolve, reject) => {
+  new Promise((resolve) => {
     if (url && !anyWindow.transitive?.FoxgloveWebrtcPlayer) {
       const script = document.createElement('script');
       script.setAttribute('src', url);
@@ -90,7 +88,7 @@ const decodeJWT = (jwt: string) => {
 };
 
 const log = Logger.getLogger(__filename);
-const rosLog = Logger.getLogger("ROS1");
+// const rosLog = Logger.getLogger("ROS1");
 
 const CAPABILITIES = [
   PlayerCapabilities.advertise,
@@ -112,18 +110,6 @@ const CAPABILITIES = [
 //   metricsCollector: PlayerMetricsCollectorInterface;
 //   sourceId: string;
 // };
-
-const clamp = (n: number, low: number, high: number) => Math.min(Math.max(low, n), high);
-
-const yuv2rgb = (y: any, u: any, v: any) => {
-  y = parseInt(y);
-  u = parseInt(u);
-  v = parseInt(v);
-  const r = clamp(Math.floor( y + 1.4075 * (v - 128)), 0, 255);
-  const g = clamp(Math.floor( y - 0.3455 * (u - 128) - (0.7169 * (v - 128))), 0, 255);
-  const b = clamp(Math.floor( y + 1.7790 * (u - 128)), 0, 255);
-  return {r,g,b};
-};
 
 /** Convert YUV420 (aka. I420) buffer to rgb8.
  * From https://gist.github.com/ryohey/ee6a4d9a7293d66944b1ef9489807783. */
@@ -219,24 +205,21 @@ export default class WebRTCPlayer implements Player {
   }
 
   private _init = async () => {
-
-    // const orgId = 'cfritz';
-    // const deviceId = 'f5b1b62bd4';
-    const component = 'foxglove-player';
     const {id, device, capability} = decodeJWT(this._jwt);
-
-    // await ensureWebComponentIsLoaded(capability, component, orgId, deviceId);
     await ensurePlayerIsLoaded(`${this._url}?userId=${id}&deviceId=${device}`);
 
     anyWindow.webrtcPlayer = this;
+    const url = new URL(this._url);
+    const host = url.host.replace('portal.', '');
+    const ssl = (url.protocol == 'https');
 
     const foxgloveWebrtcPlayer = new anyWindow.transitive.FoxgloveWebrtcPlayer();
     this._foxgloveWebrtcPlayer = foxgloveWebrtcPlayer;
     await foxgloveWebrtcPlayer.connect({
       jwt: this._jwt,
       id,
-      host: 'homedesk.local:8000',   // #TODO
-      ssl: false  // #TODO
+      host,
+      ssl
     });
     const sessionId = foxgloveWebrtcPlayer.sessionId;
     log.debug('sessionId:', sessionId);
@@ -260,7 +243,7 @@ export default class WebRTCPlayer implements Player {
     mqttSync.publish(`${this._sessionTopic}/client/#`);
 
     mqttSync.data.subscribePath(`${this._fullTopic}/all/robot/topics`,
-      (topics: any, key: string, matched: any) => {
+      (topics: any) => {
         log.debug('got topics', topics);
 
         this._providerTopics = _.map(topics, topic => ({
@@ -497,6 +480,8 @@ export default class WebRTCPlayer implements Player {
   }
 
   public setParameter(key: string, value: ParameterValue): void {
+    console.log('setParameter', key, value);
+    throw new Error("Setting parameters is not yet supported by this data source");
   }
 
   public publish({ topic, msg }: PublishPayload): void {
@@ -505,13 +490,13 @@ export default class WebRTCPlayer implements Player {
   }
 
   public async callService(service: string, request: unknown): Promise<unknown> {
-    // console.log('callService', service, request);
-    // return true;
+    console.log('callService', service, request);
     throw new Error("Service calls are not supported by this data source");
   }
 
-  //   // Bunch of unsupported stuff. Just don't do anything for these.
+  // Bunch of unsupported stuff. Just don't do anything for these.
   public setGlobalVariables(...args: any[]): void {
-    //     // no-op
+    console.log('setGlobalVariables', ...args);
+    throw new Error("Setting global vars is not yet supported by this data source");
   }
 }
