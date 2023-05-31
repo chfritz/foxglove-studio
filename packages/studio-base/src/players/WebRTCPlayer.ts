@@ -111,30 +111,30 @@ const CAPABILITIES = [
 //   sourceId: string;
 // };
 
-/** Convert YUV420 (aka. I420) buffer to rgb8.
- * From https://gist.github.com/ryohey/ee6a4d9a7293d66944b1ef9489807783. */
-function yuv420ProgPlanarToRgb(yuv: any, width: number, height: number) {
-  const frameSize = width * height;
-  const halfWidth = Math.floor(width / 2);
-  const uStart = frameSize;
-  const vStart = frameSize + Math.floor(frameSize / 4);
-  const rgb = [];
+// /** Convert YUV420 (aka. I420) buffer to rgb8.
+//  * From https://gist.github.com/ryohey/ee6a4d9a7293d66944b1ef9489807783. */
+// function yuv420ProgPlanarToRgb(yuv: any, width: number, height: number) {
+//   const frameSize = width * height;
+//   const halfWidth = Math.floor(width / 2);
+//   const uStart = frameSize;
+//   const vStart = frameSize + Math.floor(frameSize / 4);
+//   const rgb = [];
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const yy = yuv[y * width + x];
-      const colorIndex = Math.floor(y / 2) * halfWidth + Math.floor(x / 2);
-      const uu = yuv[uStart + colorIndex] - 128;
-      const vv = yuv[vStart + colorIndex] - 128;
-      const r = yy + 1.402 * vv;
-      const g = yy - 0.344 * uu - 0.714 * vv;
-      const b = yy + 1.772 * uu;
-      rgb.push(r, g, b);
-    }
-  }
+//   for (let y = 0; y < height; y++) {
+//     for (let x = 0; x < width; x++) {
+//       const yy = yuv[y * width + x];
+//       const colorIndex = Math.floor(y / 2) * halfWidth + Math.floor(x / 2);
+//       const uu = yuv[uStart + colorIndex] - 128;
+//       const vv = yuv[vStart + colorIndex] - 128;
+//       const r = yy + 1.402 * vv;
+//       const g = yy - 0.344 * uu - 0.714 * vv;
+//       const b = yy + 1.772 * uu;
+//       rgb.push(r, g, b);
+//     }
+//   }
 
-  return rgb;
-}
+//   return rgb;
+// }
 
 // Connects to a robot over a webrtc connection negotiated by Transitive Robotics
 export default class WebRTCPlayer implements Player {
@@ -165,8 +165,8 @@ export default class WebRTCPlayer implements Player {
   // private _problems = new PlayerProblemManager();
   // private _emitTimer?: ReturnType<typeof setTimeout>;
   // private readonly _sourceId: string;
-  private _data?: any;
-  private _fullTopic?: string;
+  // private _data?: any;
+  // private _fullTopic?: string;
   private _sessionTopic?: string;
   private _topicIndex?: any;
   private _foxgloveWebrtcPlayer?: any;
@@ -188,30 +188,28 @@ export default class WebRTCPlayer implements Player {
     this._url = url;
     this._jwt = jwt;
     this._start = fromMillis(Date.now());
-
     this._init();
-
     this._providerDatatypes = new Map();
-    this._providerDatatypes.set('turtlesim/Pose', {
-      name: 'turtlesim/Pose',
-      definitions: [
-        {name: 'x', type: 'float32'},
-        {name: 'y', type: 'float32'},
-        {name: 'theta', type: 'float32'},
-        {name: 'linear_velocity', type: 'float32'},
-        {name: 'angular_velocity', type: 'float32'},
-      ]
-    });
+    // this._providerDatatypes.set('turtlesim/Pose', {
+    //   name: 'turtlesim/Pose',
+    //   definitions: [
+    //     {name: 'x', type: 'float32'},
+    //     {name: 'y', type: 'float32'},
+    //     {name: 'theta', type: 'float32'},
+    //     {name: 'linear_velocity', type: 'float32'},
+    //     {name: 'angular_velocity', type: 'float32'},
+    //   ]
+    // });
   }
 
   private _init = async () => {
-    const {id, device, capability} = decodeJWT(this._jwt);
+    const {id, device} = decodeJWT(this._jwt);
     await ensurePlayerIsLoaded(`${this._url}?userId=${id}&deviceId=${device}`);
 
     anyWindow.webrtcPlayer = this;
     const url = new URL(this._url);
     const host = url.host.replace('portal.', '');
-    const ssl = (url.protocol == 'https');
+    const ssl = (url.protocol == 'https:');
 
     const foxgloveWebrtcPlayer = new anyWindow.transitive.FoxgloveWebrtcPlayer();
     this._foxgloveWebrtcPlayer = foxgloveWebrtcPlayer;
@@ -219,43 +217,29 @@ export default class WebRTCPlayer implements Player {
       jwt: this._jwt,
       id,
       host,
-      ssl
+      ssl,
+      onTopics: (topics: any) => {
+        log.debug('got topics', topics);
+        this._providerTopics = _.map(topics, topic => ({
+            name: topic.name,
+            schemaName: topic.type
+        }));
+        this._topicIndex = _.keyBy(this._providerTopics, 'name');
+        this._updateSubscriptions();
+        this._updatePublishers();
+        this._emitState();
+      }
     });
-    const sessionId = foxgloveWebrtcPlayer.sessionId;
-    log.debug('sessionId:', sessionId);
+
+    // ugly side-loading trick, but saves 90% CPU compares to using images!
     anyWindow.playerCap = foxgloveWebrtcPlayer;
 
     setTimeout(() => {
       log.debug('tracks', foxgloveWebrtcPlayer.tracks);
     }, 4000);
 
-    this._fullTopic = ['', // for initial slash
-        id, device, capability, anyWindow.transitive.version
-      ].join('/');
-    this._sessionTopic = `${this._fullTopic}/${sessionId}`;
-
     foxgloveWebrtcPlayer.onData(this._onData.bind(this));
 
-    const mqttSync = foxgloveWebrtcPlayer.mqttSync;
-
-    mqttSync.subscribe(`${this._fullTopic}/all/robot/#`);
-    mqttSync.subscribe(`${this._sessionTopic}/robot/#`);
-    mqttSync.publish(`${this._sessionTopic}/client/#`);
-
-    mqttSync.data.subscribePath(`${this._fullTopic}/all/robot/topics`,
-      (topics: any) => {
-        log.debug('got topics', topics);
-
-        this._providerTopics = _.map(topics, topic => ({
-            name: topic.name,
-            schemaName: topic.type
-        }));
-        this._topicIndex = _.keyBy(this._providerTopics, 'name');
-
-        this._emitState();
-      });
-
-    this._data = mqttSync.data;
     this._updateSubscriptions();
     this._updatePublishers();
   }
@@ -306,17 +290,6 @@ export default class WebRTCPlayer implements Player {
       const receiveTime = fromMillis(Date.now());
       const topic = json.topic;
 
-      // const rgb = [];
-      // const buf = json.buf;
-      // for (let i = 0; i < buf.length; i += 3) {
-      //   const {r,g,b} = yuv2rgb(buf[i], buf[i+1], buf[i+2]);
-      //   rgb.push(r, g, b);
-      // }
-
-      // TODO: this requires about 80% CPU for fisheye (30fps)!
-      const rgb = yuv420ProgPlanarToRgb(json.buf, json.width, json.height);
-      // const rgb = json.buf;
-
       this._parsedMessages.push({
         topic,
         schemaName: 'sensor_msgs/Image',
@@ -328,9 +301,9 @@ export default class WebRTCPlayer implements Player {
           encoding: 'rgb8', // #CHANGE
           is_bigendian: false,
           step: json.width * 3, // #CHANGE
-          data: Buffer.from(rgb),
+          data: Buffer.from(json.buf),
         },
-        sizeInBytes: rgb.length,
+        sizeInBytes: json.buf.length,
       });
 
       // update stats:
@@ -344,6 +317,8 @@ export default class WebRTCPlayer implements Player {
       }
       stats.numMessages++;
       stats.lastMessageTime = receiveTime;
+    } else {
+      log.debug('unknown message type', json);
     }
 
     this._emitState();
@@ -421,7 +396,7 @@ export default class WebRTCPlayer implements Player {
 
   public setSubscriptions(subscriptions: SubscribePayload[]): void {
     this._requestedSubscriptions = subscriptions;
-    log.debug('setSubscriptions', subscriptions);
+    console.log('setSubscriptions', subscriptions);
     this._updateSubscriptions();
   }
 
@@ -439,14 +414,13 @@ export default class WebRTCPlayer implements Player {
       }
     });
 
-    log.debug('_updateSubscriptions', {webrtcTracks, subscriptions});
-    this._data?.update(`${this._sessionTopic}/client/subscriptions`,
-      subscriptions);
-
     if (!this._foxgloveWebrtcPlayer) {
-      console.log('webrtc player not yet initialized');
+      log.debug('webrtc player not yet initialized');
       return;
     }
+
+    log.debug('_updateSubscriptions', {webrtcTracks, subscriptions});
+    this._foxgloveWebrtcPlayer.setSubscriptions(subscriptions);
 
     const streams: any[] = [];
     Object.keys(webrtcTracks).sort().forEach((sourceSpec) => {
@@ -469,14 +443,11 @@ export default class WebRTCPlayer implements Player {
 
   public setPublishers(publishers: AdvertiseOptions[]): void {
     this._requestedPublishers = publishers;
-    console.log('we were asked to advertise', publishers);
     this._sessionTopic && this._updatePublishers();
   }
 
   private _updatePublishers(): void {
-    console.log(this._sessionTopic, 'advertising', this._requestedPublishers);
-    this._data?.update(`${this._sessionTopic}/client/publications`,
-      this._requestedPublishers);
+    this._foxgloveWebrtcPlayer.setPublications(this._requestedPublishers);
   }
 
   public setParameter(key: string, value: ParameterValue): void {
@@ -485,7 +456,6 @@ export default class WebRTCPlayer implements Player {
   }
 
   public publish({ topic, msg }: PublishPayload): void {
-    console.log('we were asked to publish', topic, msg);
     this._foxgloveWebrtcPlayer.publish({topic, msg});
   }
 
