@@ -140,6 +140,7 @@ const CAPABILITIES = [
 export default class WebRTCPlayer implements Player {
   private _url: string;
   private _jwt: string;
+  private _device: string | undefined;
   // private _hostname?: string; // ROS_HOSTNAME
   // private _rosNode?: RosNode; // Our ROS node when we're connected.
   private _id: string = uuidv4(); // Unique ID for this player.
@@ -183,10 +184,12 @@ export default class WebRTCPlayer implements Player {
 //     void this._open();
 //   }
 
-  public constructor({ url, jwt }: {url: string, jwt: string}) {
+  public constructor({ url, jwt, device = undefined }:
+    {url: string, jwt: string, device: string | undefined}) {
     log.info(`initializing WebRTCPlayer url=${url}`);
     this._url = url;
     this._jwt = jwt;
+    this._device = device;
     this._start = fromMillis(Date.now());
     this._init();
     this._providerDatatypes = new Map();
@@ -216,6 +219,7 @@ export default class WebRTCPlayer implements Player {
     await foxgloveWebrtcPlayer.connect({
       jwt: this._jwt,
       id,
+      device: this._device, // optional: overwrite device in JWT (e.g., _fleet)
       host,
       ssl,
       onTopics: (topics: any) => {
@@ -298,9 +302,9 @@ export default class WebRTCPlayer implements Player {
           header: {stamp: {sec: 0, nsec: 0}, seq: 0},
           width: json.width,
           height: json.height,
-          encoding: 'rgb8', // #CHANGE
+          encoding: 'rgb8',
           is_bigendian: false,
-          step: json.width * 3, // #CHANGE
+          step: json.width * 3,
           data: Buffer.from(json.buf),
         },
         sizeInBytes: json.buf.length,
@@ -357,8 +361,8 @@ export default class WebRTCPlayer implements Player {
       presence: PlayerPresence.PRESENT,
       progress: {},
       capabilities: CAPABILITIES,
-      profile: undefined,
-      // profile: "ros1",
+      // profile: undefined,
+      profile: "ros1",
       playerId: this._id,
       problems: [],
       activeData: {
