@@ -40,16 +40,15 @@ export default class WebRTCDataSourceFactory implements IDataSourceFactory {
   };
 
   public initialize(args: DataSourceFactoryInitializeArgs): Player | undefined {
-    const url = args.params?.url;
-    if (!url || !args.params?.jwt) {
+    if (!args.params?.url || !args.params?.jwt) {
       return;
     }
 
     return new WebRTCPlayer({
-      url,
-      jwt: args.params.jwt
-      // metricsCollector: args.metricsCollector,
-      // sourceId: this.id,
+      url: args.params.url,
+      jwt: args.params.jwt,
+      device: args.params.device,
+      ...args.params
     });
   }
 }
