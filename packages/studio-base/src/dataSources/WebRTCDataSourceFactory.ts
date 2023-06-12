@@ -47,7 +47,6 @@ export default class WebRTCDataSourceFactory implements IDataSourceFactory {
     return new WebRTCPlayer({
       url: args.params.url,
       jwt: args.params.jwt,
-      device: args.params.device,
       ...args.params
     });
   }
