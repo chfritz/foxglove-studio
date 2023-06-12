@@ -141,6 +141,7 @@ export default class WebRTCPlayer implements Player {
   private _url: string;
   private _jwt: string;
   private _device: string | undefined;
+  private _bitrate: number | undefined;
   // private _hostname?: string; // ROS_HOSTNAME
   // private _rosNode?: RosNode; // Our ROS node when we're connected.
   private _id: string = uuidv4(); // Unique ID for this player.
@@ -184,12 +185,13 @@ export default class WebRTCPlayer implements Player {
 //     void this._open();
 //   }
 
-  public constructor({ url, jwt, device = undefined }:
-    {url: string, jwt: string, device: string | undefined}) {
+  public constructor({ url, jwt, device = undefined, bitrate = undefined }:
+    {url: string, jwt: string, device?: string, bitrate?: number}) {
     log.info(`initializing WebRTCPlayer url=${url}`);
     this._url = url;
     this._jwt = jwt;
     this._device = device;
+    this._bitrate = bitrate;
     this._start = fromMillis(Date.now());
     this._init();
     this._providerDatatypes = new Map();
@@ -436,7 +438,10 @@ export default class WebRTCPlayer implements Player {
       // }
     });
 
-    this._foxgloveWebrtcPlayer.setRequest({ streams }, {
+    this._foxgloveWebrtcPlayer.setRequest({
+        streams,
+        bitrate: this._bitrate
+      }, {
       onTrack: (track: any, tracks: any[]) => {
         console.log('onTrack', track, tracks);
         // this._videoTracks = tracks;
