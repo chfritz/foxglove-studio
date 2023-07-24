@@ -777,7 +777,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
 
     const messages = this.#parsedMessages;
     this.#parsedMessages = [];
-    return this.#listener({
+    const obj = {
       name: this.#name,
       presence: this.#presence,
       progress: {},
@@ -804,7 +804,9 @@ export default class FoxgloveWebSocketPlayer implements Player {
         subscribedTopics: this.#subscribedTopics,
         services: this.#advertisedServices,
       },
-    });
+    }
+    log.debug(obj);
+    return this.#listener(obj);
   });
 
   public setListener(listener: (arg0: PlayerState) => Promise<void>): void {

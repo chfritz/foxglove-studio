@@ -30,6 +30,8 @@ import {
   TopicStats,
 } from "@foxglove/studio-base/players/types";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
+import CommonRosTypes from "@foxglove/rosmsg-msgs-common";
+
 // import rosDatatypesToMessageDefinition from "@foxglove/studio-base/util/rosDatatypesToMessageDefinition";
 // import { getTopicsByTopicName } from "@foxglove/studio-base/util/selectors";
 // import { HttpServer } from "@foxglove/xmlrpc";
@@ -92,8 +94,8 @@ const log = Logger.getLogger(__filename);
 
 const CAPABILITIES = [
   PlayerCapabilities.advertise,
-  PlayerCapabilities.getParameters,
-  PlayerCapabilities.setParameters,
+  // PlayerCapabilities.getParameters,
+  // PlayerCapabilities.setParameters,
 ];
 
 // enum Problem {
@@ -136,6 +138,21 @@ const CAPABILITIES = [
 //   return rgb;
 // }
 
+/** unify ros1 and ros2 topic types to `pkg/Type` format, i.e., strip the
+ * middle `msgs` from ros 2 types */
+const simpleSchemaName = (schemaName: string) : string => {
+  const parts = schemaName.split('/');
+  return parts.length == 2 ? schemaName : `${parts[0]}/${parts[2]}`;
+};
+
+const dataTypeToFullName = (dataType: string): string => {
+  const parts = dataType.split("/");
+  if (parts.length === 2) {
+    return `${parts[0]}/msg/${parts[1]}`;
+  }
+  return dataType;
+}
+
 // Connects to a robot over a webrtc connection negotiated by Transitive Robotics
 export default class WebRTCPlayer implements Player {
   private _url: string;
@@ -153,7 +170,7 @@ export default class WebRTCPlayer implements Player {
   // private _publishedTopics = new Map<string, Set<string>>(); // A map of topic names to the set of publisher IDs publishing each topic.
   // private _subscribedTopics = new Map<string, Set<string>>(); // A map of topic names to the set of subscriber IDs subscribed to each topic.
   // private _services = new Map<string, Set<string>>(); // A map of service names to service provider IDs that provide each service.
-  // private _parameters = new Map<string, ParameterValue>(); // rosparams
+  private _parameters = new Map<string, ParameterValue>(); // rosparams
   private _start: Time; // The time at which we started playing.
   // private _clockTime?: Time; // The most recent published `/clock` time, if available
   private _requestedPublishers: AdvertiseOptions[] = []; // Requested publishers by setPublishers()
@@ -229,6 +246,7 @@ export default class WebRTCPlayer implements Player {
         this._providerTopics = _.map(topics, topic => ({
             name: topic.name,
             schemaName: topic.type
+            // schemaName: simpleSchemaName(topic.type)
         }));
         this._topicIndex = _.keyBy(this._providerTopics, 'name');
         this._updateSubscriptions();
@@ -245,6 +263,28 @@ export default class WebRTCPlayer implements Player {
     }, 4000);
 
     foxgloveWebrtcPlayer.onData(this._onData.bind(this));
+
+    // log.debug(CommonRosTypes);
+    _.forEach(CommonRosTypes.ros2galactic, (dataType) => {
+      if (dataType.name) {
+        this._providerDatatypes.set(dataType.name, dataType);
+        dataType.name = dataTypeToFullName(dataType.name);
+        this._providerDatatypes.set(dataType.name, dataType);
+      }
+    });
+
+    // #DEBUG
+    // this._providerDatatypes.set('turtlesim/msg/Pose', {
+    //   definitions: [
+    //       {name: 'x', type: 'float32', isComplex: false, isArray: false},
+    //       {name: 'y', type: 'float32', isComplex: false, isArray: false},
+    //       {name: 'theta', type: 'float32', isComplex: false, isArray: false},
+
+    //       {name: 'linear_velocity', type: 'float32', isComplex: false, isArray: false},
+    //       {name: 'angular_velocity', type: 'float32', isComplex: false, isArray: false},
+    //     ]
+    // });
+    // log.debug(this._providerDatatypes);
 
     this._updateSubscriptions();
     this._updatePublishers();
@@ -263,6 +303,7 @@ export default class WebRTCPlayer implements Player {
   }
   */
   private _onData(json: any) {
+    // log.debug('onData', json);
     if (json.type === 'ros1message') {
       _.forEach(json.data, (value, topic) => {
         const receiveTime = fromMillis(Date.now());
@@ -270,6 +311,7 @@ export default class WebRTCPlayer implements Player {
         this._parsedMessages.push({
           topic,
           schemaName: this._topicIndex[topic].schemaName,
+          // schemaName: simpleSchemaName(this._topicIndex[topic].schemaName),
           receiveTime,
           message: value,
           sizeInBytes: JSON.stringify(value)?.length || 0,
@@ -298,7 +340,7 @@ export default class WebRTCPlayer implements Player {
 
       this._parsedMessages.push({
         topic,
-        schemaName: 'sensor_msgs/Image',
+        schemaName: 'sensor_msgs/Image', // TODO: adapt for ros 2
         receiveTime,
         message: {
           header: {stamp: {sec: 0, nsec: 0}, seq: 0},
@@ -357,14 +399,15 @@ export default class WebRTCPlayer implements Player {
     // log.debug('emitting state', this);
 
     const messages = this._parsedMessages;
+    // const messages = JSON.parse(JSON.stringify(this._parsedMessages || {}) || '{}');
     this._parsedMessages = [];
-    return this._listener({
+    const obj: PlayerState = {
       name: 'foxglove-webrtc',
       presence: PlayerPresence.PRESENT,
       progress: {},
       capabilities: CAPABILITIES,
-      // profile: undefined,
-      profile: "ros1",
+      profile: undefined,
+      // profile: 'ros2',
       playerId: this._id,
       problems: [],
       activeData: {
@@ -387,9 +430,11 @@ export default class WebRTCPlayer implements Player {
         // services: this._services,
         // parameters: this._parameters,
         // videoTracks: this._videoTracks,
+        parameters: this._parameters,
+        // videoTracks: this._videoTracks,
       }
-    });
-
+    };
+    return this._listener(obj);
   });
 
   public setListener(listener: (arg0: PlayerState) => Promise<void>): void {
@@ -410,13 +455,17 @@ export default class WebRTCPlayer implements Player {
     const subscriptions: any = {};
     const webrtcTracks: any = {};
     this._topicIndex && _.forEach(this._requestedSubscriptions, ({topic}) => {
+      log.debug('requesting', topic, this._topicIndex[topic]);
+      if (!this._topicIndex[topic]) {
+        return;
+      }
       const {schemaName} = this._topicIndex[topic];
       // if (topic.startsWith('webrtc:')) {
         // webrtcTracks[topic.slice('webrtc:'.length)] = 1;
       if (schemaName.split('/')[1] == 'Image') {
         webrtcTracks[topic] = 1;
       } else {
-        subscriptions[topic] = 1;
+        subscriptions[topic] = schemaName;
       }
     });
 
@@ -437,6 +486,9 @@ export default class WebRTCPlayer implements Player {
       streams.push({videoSource: {type, value}, complete: true});
       // }
     });
+
+    this._providerDatatypes = new Map(this._providerDatatypes); // Signal that datatypes changed.
+    this._emitState();
 
     this._foxgloveWebrtcPlayer.setRequest({
         streams,
