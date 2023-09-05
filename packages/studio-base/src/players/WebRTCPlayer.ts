@@ -460,8 +460,9 @@ export default class WebRTCPlayer implements Player {
       const {schemaName} = this._topicIndex[topic];
       // if (topic.startsWith('webrtc:')) {
         // webrtcTracks[topic.slice('webrtc:'.length)] = 1;
-      if (schemaName.split('/')[1] == 'Image') {
-        webrtcTracks[topic] = 1;
+      // if (schemaName.split('/')[1] == 'Image') {
+      if (schemaName.split('/').at(-1) == 'Image') {
+        webrtcTracks[topic] = this._topicIndex.rosVersion || 1;;
       } else {
         subscriptions[topic] = schemaName;
       }
@@ -481,7 +482,8 @@ export default class WebRTCPlayer implements Player {
       // if (type && value) {
       const type = 'rostopic';
       const value = sourceSpec;
-      streams.push({videoSource: {type, value}, complete: true});
+      const rosVersion = webrtcTracks[sourceSpec].rosVersion || 2;
+      streams.push({videoSource: {type, value, rosVersion}, complete: true});
       // }
     });
 
