@@ -243,12 +243,12 @@ export default class WebRTCPlayer implements Player {
       ssl,
       onTopics: (topics: any) => {
         log.debug('got topics', topics);
+        this._topicIndex = _.keyBy(topics, 'name');
         this._providerTopics = _.map(topics, topic => ({
             name: topic.name,
             schemaName: topic.type
             // schemaName: simpleSchemaName(topic.type)
         }));
-        this._topicIndex = _.keyBy(this._providerTopics, 'name');
         this._updateSubscriptions();
         this._updatePublishers();
         this._emitState();
@@ -310,7 +310,7 @@ export default class WebRTCPlayer implements Player {
 
         this._parsedMessages.push({
           topic,
-          schemaName: this._topicIndex[topic].schemaName,
+          schemaName: this._topicIndex[topic]?.type,
           // schemaName: simpleSchemaName(this._topicIndex[topic].schemaName),
           receiveTime,
           message: value,
@@ -459,14 +459,14 @@ export default class WebRTCPlayer implements Player {
       if (!this._topicIndex[topic]) {
         return;
       }
-      const {schemaName} = this._topicIndex[topic];
+      const topicObj = this._topicIndex[topic];
       // if (topic.startsWith('webrtc:')) {
         // webrtcTracks[topic.slice('webrtc:'.length)] = 1;
       // if (schemaName.split('/')[1] == 'Image') {
-      if (schemaName.split('/').at(-1) == 'Image') {
-        webrtcTracks[topic] = this._topicIndex.rosVersion || 1;;
+      if (topicObj.type.split('/').at(-1) == 'Image') {
+        webrtcTracks[topic] = topicObj;
       } else {
-        subscriptions[topic] = schemaName;
+        subscriptions[topic] = topicObj.type;
       }
     });
 
@@ -479,14 +479,11 @@ export default class WebRTCPlayer implements Player {
     this._foxgloveWebrtcPlayer.setSubscriptions(subscriptions);
 
     const streams: any[] = [];
-    Object.keys(webrtcTracks).sort().forEach((sourceSpec) => {
-      // const [type, value] = sourceSpec.split(',');
-      // if (type && value) {
+    Object.keys(webrtcTracks).sort().forEach((topic) => {
+      const {rosVersion = 1} = webrtcTracks[topic];
       const type = 'rostopic';
-      const value = sourceSpec;
-      const rosVersion = webrtcTracks[sourceSpec].rosVersion || 2;
+      const value = topic;
       streams.push({videoSource: {type, value, rosVersion}, complete: true});
-      // }
     });
 
     this._providerDatatypes = new Map(this._providerDatatypes); // Signal that datatypes changed.
