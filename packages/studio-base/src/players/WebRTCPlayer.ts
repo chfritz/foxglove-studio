@@ -506,7 +506,7 @@ export default class WebRTCPlayer implements Player {
 
   public setPublishers(publishers: AdvertiseOptions[]): void {
     this._requestedPublishers = publishers;
-    this._sessionTopic && this._updatePublishers();
+    this._updatePublishers();
   }
 
   private _updatePublishers(): void {
@@ -530,6 +530,6 @@ export default class WebRTCPlayer implements Player {
   // Bunch of unsupported stuff. Just don't do anything for these.
   public setGlobalVariables(...args: any[]): void {
     console.log('setGlobalVariables', ...args);
-    throw new Error("Setting global vars is not yet supported by this data source");
+    // throw new Error("Setting global vars is not yet supported by this data source");
   }
 }
