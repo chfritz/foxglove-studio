@@ -159,6 +159,7 @@ export default class WebRTCPlayer implements Player {
   private _jwt: string;
   private _device: string | undefined;
   private _bitrate: number | undefined;
+  private _datarate: number | undefined;
   // private _hostname?: string; // ROS_HOSTNAME
   // private _rosNode?: RosNode; // Our ROS node when we're connected.
   private _id: string = uuidv4(); // Unique ID for this player.
@@ -202,13 +203,15 @@ export default class WebRTCPlayer implements Player {
 //     void this._open();
 //   }
 
-  public constructor({ url, jwt, device = undefined, bitrate = undefined }:
-    {url: string, jwt: string, device?: string, bitrate?: number}) {
+  public constructor(
+    { url, jwt, device = undefined, bitrate = undefined, datarate = undefined }:
+    {url: string, jwt: string, device?: string, bitrate?: number, datarate?: number}) {
     log.info(`initializing WebRTCPlayer url=${url}`);
     this._url = url;
     this._jwt = jwt;
     this._device = device;
-    this._bitrate = bitrate;
+    this._bitrate = bitrate; // bitrate in KB/s for video streams
+    this._datarate = datarate; // bitrate in KB/s for data connection
     this._start = fromMillis(Date.now());
     this._init();
     this._providerDatatypes = new Map();
@@ -241,6 +244,7 @@ export default class WebRTCPlayer implements Player {
       device: this._device, // optional: overwrite device in JWT (e.g., _fleet)
       host,
       ssl,
+      dataRate: this._datarate,
       onTopics: (topics: any) => {
         log.debug('got topics', topics);
         this._topicIndex = _.keyBy(topics, 'name');
