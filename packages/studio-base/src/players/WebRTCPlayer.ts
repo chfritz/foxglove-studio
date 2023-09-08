@@ -138,12 +138,12 @@ const CAPABILITIES = [
 //   return rgb;
 // }
 
-/** unify ros1 and ros2 topic types to `pkg/Type` format, i.e., strip the
- * middle `msgs` from ros 2 types */
-const simpleSchemaName = (schemaName: string) : string => {
-  const parts = schemaName.split('/');
-  return parts.length == 2 ? schemaName : `${parts[0]}/${parts[2]}`;
-};
+// /** unify ros1 and ros2 topic types to `pkg/Type` format, i.e., strip the
+//  * middle `msgs` from ros 2 types */
+// const simpleSchemaName = (schemaName: string) : string => {
+//   const parts = schemaName.split('/');
+//   return parts.length == 2 ? schemaName : `${parts[0]}/${parts[2]}`;
+// };
 
 const dataTypeToFullName = (dataType: string): string => {
   const parts = dataType.split("/");
@@ -187,10 +187,8 @@ export default class WebRTCPlayer implements Player {
   // private readonly _sourceId: string;
   // private _data?: any;
   // private _fullTopic?: string;
-  private _sessionTopic?: string;
   private _topicIndex?: any;
   private _foxgloveWebrtcPlayer?: any;
-  private _videoTracks?: any[];
 
 //   public constructor({ url, hostname, metricsCollector, sourceId }: Ros1PlayerOpts) {
 //     log.info(`initializing Ros1Player (url=${url}, hostname=${hostname})`);
@@ -511,7 +509,7 @@ export default class WebRTCPlayer implements Player {
   }
 
   private _updatePublishers(): void {
-    this._foxgloveWebrtcPlayer.setPublications(this._requestedPublishers);
+    this._foxgloveWebrtcPlayer?.setPublications(this._requestedPublishers);
   }
 
   public setParameter(key: string, value: ParameterValue): void {
