@@ -495,7 +495,7 @@ export default class WebRTCPlayer implements Player {
 
     this._foxgloveWebrtcPlayer.setRequest({
         streams,
-        bitrate: this._bitrate
+        bitrate: Number(this._bitrate || 100)
       }, {
       onTrack: (track: any, tracks: any[]) => {
         console.log('onTrack', track, tracks);
